@@ -1,0 +1,109 @@
+import serial
+import time
+import threading
+import tkinter as tk
+from tkinter import ttk
+import requests
+
+# === CONFIGURE ===
+SERIAL_PORT = '/dev/ttyACM0'
+BAUD_RATE = 9600
+IFTTT_EVENT = 'security_alert'
+IFTTT_KEY = 'your_ifttt_key_here'  # Replace with your actual key
+
+# === Global State ===
+light_status = "UNKNOWN"
+lock_status = "UNKNOWN"
+last_report_time = time.time()
+arduino = None
+
+# === Webhook ===
+def send_webhook(message):
+    url = f"https://maker.ifttt.com/trigger/{IFTTT_EVENT}/with/key/{IFTTT_KEY}"
+    payload = {"value1": message}
+    try:
+        r = requests.post(url, json=payload)
+        if r.status_code == 200:
+            print("[Webhook] Sent successfully.")
+        else:
+            print(f"[Webhook] Failed: {r.status_code}")
+    except Exception as e:
+        print(f"[Webhook] Error: {e}")
+
+# === Send Command to Arduino ===
+def send_command(command):
+    if arduino and arduino.is_open:
+        arduino.write((command.strip().upper() + '\n').encode())
+        print(f"[Sent] {command}")
+
+# === Manual Lock for 10s ===
+def manual_lock_10s():
+    send_command("LOCK")
+    status_label.config(text="Manually Locked for 10s", foreground="orange")
+    window.after(10000, lambda: send_command("UNLOCK"))
+
+# === GUI Update Loop ===
+def update_gui():
+    light_label.config(text=f"Light: {light_status}")
+    lock_label.config(text=f"Door: {lock_status}")
+    window.after(1000, update_gui)
+
+# === Serial Reading Loop (in thread) ===
+def read_serial():
+    global light_status, lock_status, last_report_time
+    while True:
+        if arduino.in_waiting > 0:
+            line = arduino.readline().decode().strip()
+            print("[Arduino]", line)
+
+            if "Lights are ON" in line:
+                light_status = "ON"
+            elif "Lights are OFF" in line:
+                light_status = "OFF"
+            elif "Auto-locked door" in line or "Bolt locked" in line:
+                lock_status = "LOCKED"
+            elif "Auto-unlocked door" in line or "Bolt unlocked" in line:
+                lock_status = "UNLOCKED"
+
+        # Webhook every 20s
+        now = time.time()
+        if now - last_report_time >= 20:
+            msg = f"Status Update:\nLight: {light_status}\nDoor: {lock_status}"
+            send_webhook(msg)
+            last_report_time = now
+
+        time.sleep(0.2)
+
+# === GUI Setup ===
+window = tk.Tk()
+window.title("Smart Lock Monitor")
+window.geometry("300x200")
+window.resizable(False, False)
+
+title = ttk.Label(window, text="Smart Door Status", font=("Helvetica", 16))
+title.pack(pady=10)
+
+light_label = ttk.Label(window, text="Light: --", font=("Helvetica", 12))
+light_label.pack(pady=5)
+
+lock_label = ttk.Label(window, text="Door: --", font=("Helvetica", 12))
+lock_label.pack(pady=5)
+
+status_label = ttk.Label(window, text="", font=("Helvetica", 10), foreground="green")
+status_label.pack(pady=5)
+
+lock_button = ttk.Button(window, text="Lock Door for 10s", command=manual_lock_10s)
+lock_button.pack(pady=10)
+
+# === Start Everything ===
+try:
+    arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+    time.sleep(2)
+    print("[Serial] Connected to Arduino.")
+
+    threading.Thread(target=read_serial, daemon=True).start()
+    update_gui()
+    window.mainloop()
+
+except serial.SerialException:
+    print("ERROR: Could not open serial port. Check connection.")
