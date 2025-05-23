@@ -1,0 +1,84 @@
+#include <Wire.h>
+#include <BH1750.h>
+#include <Servo.h>
+
+Servo boltLock;
+BH1750 lightMeter;
+
+const int servoPin = 9;
+
+bool locked = true;
+bool lightsOn = false;
+float lightValue = 0;
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+  lightMeter.begin();
+
+  boltLock.attach(servoPin);
+
+  lockDoor();  // Start in locked state
+  Serial.println("System ready. Lock controlled by light and serial input.");
+}
+
+void loop() {
+  // === 1. Read light level ===
+  lightValue = lightMeter.readLightLevel();
+
+  // === 2. Auto-control lock based on light ===
+  if (lightValue > 100) {
+    if (!lightsOn) {
+      Serial.println("Lights are ON");
+      lightsOn = true;
+    }
+    if (locked) {
+      unlockDoor();
+      Serial.println("Auto-unlocked door (light is ON).");
+    }
+  } else {
+    if (lightsOn) {
+      Serial.println("Lights are OFF");
+      lightsOn = false;
+    }
+    if (!locked) {
+      lockDoor();
+      Serial.println("Auto-locked door (light is OFF).");
+    }
+  }
+
+  // === 3. Handle serial commands from Raspberry Pi ===
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+
+    if (command == "LOCK") {
+      lockDoor();
+      Serial.println("Bolt locked via serial.");
+    } else if (command == "UNLOCK") {
+      unlockDoor();
+      Serial.println("Bolt unlocked via serial.");
+    } else {
+      Serial.print("Unknown serial command: ");
+      Serial.println(command);
+    }
+  }
+
+  // === 4. Status message (optional) ===
+  Serial.print("Light: ");
+  Serial.print(lightValue);
+  Serial.print(" lux | Locked: ");
+  Serial.println(locked ? "YES" : "NO");
+
+  delay(1000);
+}
+
+void lockDoor() {
+  boltLock.write(125);  // Adjust this angle to match your lock position
+  locked = true;
+}
+
+void unlockDoor() {
+  boltLock.write(145);  // Adjust this angle to match your unlock position
+  locked = false;
+}
