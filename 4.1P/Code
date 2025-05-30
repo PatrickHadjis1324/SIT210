@@ -1,0 +1,25 @@
+# blinker.py
+
+import RPi.GPIO as GPIO  # Import the GPIO library to control the GPIO pins
+import time              # Import the time library for sleep/delay
+
+# Set the pin numbering mode: BOARD mode uses the physical pin numbers
+GPIO.setmode(GPIO.BOARD)
+
+# Set up pin 10 as an output pin
+GPIO.setup(10, GPIO.OUT)
+
+try:
+    # Run an infinite loop to blink the LED
+    while True:
+        # Turn on the LED
+        GPIO.output(10, GPIO.HIGH)
+        time.sleep(0.25)  # Wait for 0.25 seconds
+
+        # Turn off the LED
+        GPIO.output(10, GPIO.LOW)
+        time.sleep(0.25)  # Wait for 0.25 seconds
+
+# Handle a KeyboardInterrupt (Ctrl+C) to exit gracefully
+except KeyboardInterrupt:
+    GPIO.cleanup()  # Reset the GPIO pins to a safe state
